@@ -1,0 +1,315 @@
+@import "tailwindcss";
+
+/*
+ * Meridian design tokens — dark technical theme (Phase 3.5).
+ * This is the one and only theme (no light/dark toggle); a personal
+ * biological command center reads as an instrument panel, not a document.
+ *
+ * Layers:
+ *  1. Base tokens (background/surface/text/border/grid) — new names.
+ *  2. State tokens (state-good/watch/elevated/high/low/neutral) — semantic
+ *     meaning, always paired with a label/icon in components, never color alone.
+ *  3. System tokens (system-brain/heart/liver/...) — one hue per body system.
+ *  4. Back-compat aliases — the original Phase 1/2 token names (--accent,
+ *     --sys-cardiovascular, etc.) still work, now pointing at the tokens
+ *     above, so no component needed to change just because the palette did.
+ */
+
+:root {
+  /* --- base --- */
+  --background: #090d14;
+  --surface: #10161f;
+  --surface-elevated: #161d29;
+  --surface-active: #1d2635;
+  --surface-muted: #0c111a;
+  --border: #232e40;
+  --border-soft: #1a2332;
+  --grid: #16202f;
+
+  --text-primary: #e7edf6;
+  --text-secondary: #92a0b5;
+  --text-muted: #5b6779;
+
+  /* --- primary interactive (structural / neutral physiological data) --- */
+  --accent: #3aa3ff;
+  --accent-foreground: #051019;
+  --accent-soft: rgba(58, 163, 255, 0.14);
+
+  /* --- state colors: always paired with label + icon, never color alone --- */
+  --state-good: #2fd67a;
+  --state-good-soft: rgba(47, 214, 122, 0.14);
+  --state-watch: #e0c341;
+  --state-watch-soft: rgba(224, 195, 65, 0.14);
+  --state-elevated: #f5a524;
+  --state-elevated-soft: rgba(245, 165, 36, 0.14);
+  --state-high: #f5564a;
+  --state-high-soft: rgba(245, 86, 74, 0.16);
+  --state-low: #4cc3f0;
+  --state-low-soft: rgba(76, 195, 240, 0.14);
+  --state-neutral: #8d9bb0;
+  --state-neutral-soft: rgba(141, 155, 176, 0.12);
+
+  /* --- system colors: one per body system --- */
+  --system-brain: #a78bfa;
+  --system-brain-soft: rgba(167, 139, 250, 0.14);
+  --system-heart: #fb7185;
+  --system-heart-soft: rgba(251, 113, 133, 0.14);
+  --system-liver: #fb923c;
+  --system-liver-soft: rgba(251, 146, 60, 0.14);
+  --system-gut: #2dd4bf;
+  --system-gut-soft: rgba(45, 212, 191, 0.14);
+  --system-kidney: #818cf8;
+  --system-kidney-soft: rgba(129, 140, 248, 0.14);
+  --system-lung: #38bdf8;
+  --system-lung-soft: rgba(56, 189, 248, 0.14);
+  --system-musculoskeletal: #a3e635;
+  --system-musculoskeletal-soft: rgba(163, 230, 53, 0.14);
+  --system-immune: #67e8f9;
+  --system-immune-soft: rgba(103, 232, 249, 0.14);
+  --system-metabolic: #fbbf24;
+  --system-metabolic-soft: rgba(251, 191, 36, 0.14);
+
+  --radius: 0.625rem;
+
+  /* ---------------------------------------------------------------------
+   * Back-compat aliases — every Phase 1/2 token name still resolves, now
+   * pointing at the new palette above, so existing components render in
+   * the new theme with zero changes required.
+   * --------------------------------------------------------------------- */
+  --foreground: var(--text-primary);
+  --muted-foreground: var(--text-secondary);
+
+  --warn: var(--state-elevated);
+  --warn-soft: var(--state-elevated-soft);
+  --danger: var(--state-high);
+  --danger-soft: var(--state-high-soft);
+  --info: var(--system-lung);
+  --info-soft: var(--system-lung-soft);
+  --gold: var(--state-watch);
+  --gold-soft: var(--state-watch-soft);
+
+  --sys-cardiovascular: var(--system-heart);
+  --sys-cardiovascular-soft: var(--system-heart-soft);
+  --sys-gut: var(--system-gut);
+  --sys-gut-soft: var(--system-gut-soft);
+  --sys-brain: var(--system-brain);
+  --sys-brain-soft: var(--system-brain-soft);
+  --sys-metabolic: var(--system-metabolic);
+  --sys-metabolic-soft: var(--system-metabolic-soft);
+  --sys-musculoskeletal: var(--system-musculoskeletal);
+  --sys-musculoskeletal-soft: var(--system-musculoskeletal-soft);
+  --sys-immune: var(--system-immune);
+  --sys-immune-soft: var(--system-immune-soft);
+  --sys-lungs: var(--system-lung);
+  --sys-lungs-soft: var(--system-lung-soft);
+  --sys-liver: var(--system-liver);
+  --sys-liver-soft: var(--system-liver-soft);
+  --sys-kidneys: var(--system-kidney);
+  --sys-kidneys-soft: var(--system-kidney-soft);
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-active: var(--surface-active);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-grid: var(--grid);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-state-good: var(--state-good);
+  --color-state-good-soft: var(--state-good-soft);
+  --color-state-watch: var(--state-watch);
+  --color-state-watch-soft: var(--state-watch-soft);
+  --color-state-elevated: var(--state-elevated);
+  --color-state-elevated-soft: var(--state-elevated-soft);
+  --color-state-high: var(--state-high);
+  --color-state-high-soft: var(--state-high-soft);
+  --color-state-low: var(--state-low);
+  --color-state-low-soft: var(--state-low-soft);
+  --color-state-neutral: var(--state-neutral);
+  --color-state-neutral-soft: var(--state-neutral-soft);
+
+  --color-system-brain: var(--system-brain);
+  --color-system-brain-soft: var(--system-brain-soft);
+  --color-system-heart: var(--system-heart);
+  --color-system-heart-soft: var(--system-heart-soft);
+  --color-system-liver: var(--system-liver);
+  --color-system-liver-soft: var(--system-liver-soft);
+  --color-system-gut: var(--system-gut);
+  --color-system-gut-soft: var(--system-gut-soft);
+  --color-system-kidney: var(--system-kidney);
+  --color-system-kidney-soft: var(--system-kidney-soft);
+  --color-system-lung: var(--system-lung);
+  --color-system-lung-soft: var(--system-lung-soft);
+  --color-system-musculoskeletal: var(--system-musculoskeletal);
+  --color-system-musculoskeletal-soft: var(--system-musculoskeletal-soft);
+  --color-system-immune: var(--system-immune);
+  --color-system-immune-soft: var(--system-immune-soft);
+  --color-system-metabolic: var(--system-metabolic);
+  --color-system-metabolic-soft: var(--system-metabolic-soft);
+
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+
+  --color-sys-cardiovascular: var(--sys-cardiovascular);
+  --color-sys-cardiovascular-soft: var(--sys-cardiovascular-soft);
+  --color-sys-gut: var(--sys-gut);
+  --color-sys-gut-soft: var(--sys-gut-soft);
+  --color-sys-brain: var(--sys-brain);
+  --color-sys-brain-soft: var(--sys-brain-soft);
+  --color-sys-metabolic: var(--sys-metabolic);
+  --color-sys-metabolic-soft: var(--sys-metabolic-soft);
+  --color-sys-musculoskeletal: var(--sys-musculoskeletal);
+  --color-sys-musculoskeletal-soft: var(--sys-musculoskeletal-soft);
+  --color-sys-immune: var(--sys-immune);
+  --color-sys-immune-soft: var(--sys-immune-soft);
+  --color-sys-lungs: var(--sys-lungs);
+  --color-sys-lungs-soft: var(--sys-lungs-soft);
+  --color-sys-liver: var(--sys-liver);
+  --color-sys-liver-soft: var(--sys-liver-soft);
+  --color-sys-kidneys: var(--sys-kidneys);
+  --color-sys-kidneys-soft: var(--sys-kidneys-soft);
+
+  --radius-sm: calc(var(--radius) - 0.25rem);
+  --radius-md: calc(var(--radius) - 0.125rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.5rem);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+* {
+  border-color: var(--border);
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Technical grid background — subtle, for anatomy/instrument panels. */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.bg-grid-fade {
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 40%, transparent 100%);
+}
+
+/* Corner ticks for TechnicalPanel — decorative instrument-panel framing. */
+.corner-ticks {
+  position: relative;
+}
+.corner-ticks::before,
+.corner-ticks::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--border);
+  pointer-events: none;
+}
+.corner-ticks::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+.corner-ticks::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+@keyframes scan-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+.animate-scan-reveal {
+  animation: scan-reveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-pulse-ring,
+  .animate-scan-reveal {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

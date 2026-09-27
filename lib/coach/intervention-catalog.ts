@@ -1,0 +1,361 @@
+import type { BodySystemId } from "@/types/health";
+import type { GoalCategory, NormalizedEventType } from "@/lib/generated/prisma/client";
+
+// A static, code-maintained catalog — deliberately NOT user-generated
+// content and NOT a database table (see docs/COACH_ARCHITECTURE.md,
+// "Intervention library"). Broad, non-clinical labels only; nothing here
+// implies an intervention is appropriate for every person, and none of it
+// is a diagnosis or a prescription.
+
+export type InterventionCategory =
+  | "SLEEP"
+  | "NUTRITION"
+  | "CARDIOVASCULAR"
+  | "STRENGTH"
+  | "AEROBIC"
+  | "RECOVERY"
+  | "STRESS"
+  | "BEHAVIOR"
+  | "ENVIRONMENT"
+  | "MEDICAL_FOLLOWUP";
+
+export type EvidenceLevel = "ESTABLISHED" | "MODERATE" | "EMERGING" | "PERSONAL_EXPERIMENT" | "UNKNOWN";
+export type Level = "LOW" | "MEDIUM" | "HIGH";
+
+export interface InterventionDefinition {
+  id: string;
+  title: string;
+  category: InterventionCategory;
+  description: string;
+  targetSystems: BodySystemId[];
+  supportedGoalCategories: GoalCategory[];
+  evidenceLevel: EvidenceLevel;
+  burden: Level;
+  riskLevel: Level;
+  timeCost: Level;
+  costLevel: Level;
+  /** Canonical biomarker/wearable metric keys a change here would plausibly show up in. */
+  measurementOptions: string[];
+  contraindicationNotes: string[];
+  requiresMedicalReview: boolean;
+  active: boolean;
+  /** Normalized exposure types this intervention directly addresses — drives personal-pattern-based candidate generation. */
+  relevantExposureTypes: NormalizedEventType[];
+}
+
+export const INTERVENTION_CATALOG: InterventionDefinition[] = [
+  {
+    id: "consistent-sleep-schedule",
+    title: "Consistent sleep/wake timing",
+    category: "SLEEP",
+    description: "Keep sleep and wake times within roughly the same 30-minute window daily, including weekends.",
+    targetSystems: ["brain"],
+    supportedGoalCategories: ["SLEEP", "LONGEVITY", "MENTAL"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: ["sleep_duration", "sleep_score", "hrv"],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: ["POOR_SLEEP_SUBJECTIVE"],
+  },
+  {
+    id: "morning-daylight",
+    title: "Morning daylight exposure",
+    category: "SLEEP",
+    description: "10+ minutes of outdoor light within an hour of waking.",
+    targetSystems: ["brain"],
+    supportedGoalCategories: ["SLEEP", "MENTAL"],
+    evidenceLevel: "MODERATE",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: ["sleep_duration", "sleep_score"],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "reduce-late-meals",
+    title: "Avoid large meals within 3 hours of bed",
+    category: "NUTRITION",
+    description: "Shift the last large meal of the day earlier, or reduce its size, when a late-meal pattern is recorded.",
+    targetSystems: ["gut", "brain"],
+    supportedGoalCategories: ["SLEEP", "METABOLIC", "LONGEVITY"],
+    evidenceLevel: "MODERATE",
+    burden: "MEDIUM",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: ["sleep_duration", "sleep_score", "hrv"],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: ["LATE_MEAL", "LARGE_MEAL"],
+  },
+  {
+    id: "reduce-evening-alcohol",
+    title: "Reduce evening alcohol",
+    category: "NUTRITION",
+    description: "Lower or skip alcohol in the hours before bed when a personal pattern links it to next-day recovery metrics.",
+    targetSystems: ["liver", "brain", "cardiovascular"],
+    supportedGoalCategories: ["SLEEP", "CARDIOVASCULAR", "LONGEVITY"],
+    evidenceLevel: "MODERATE",
+    burden: "MEDIUM",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: ["sleep_duration", "hrv", "resting_hr"],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: ["ALCOHOL"],
+  },
+  {
+    id: "zone2-training",
+    title: "Structured Zone 2 sessions",
+    category: "AEROBIC",
+    description: "Two to three sessions per week of easy, conversational-pace aerobic training.",
+    targetSystems: ["cardiovascular", "metabolic"],
+    supportedGoalCategories: ["CARDIOVASCULAR", "AEROBIC", "METABOLIC", "LONGEVITY"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "MEDIUM",
+    riskLevel: "LOW",
+    timeCost: "MEDIUM",
+    costLevel: "LOW",
+    measurementOptions: ["vo2max", "resting_hr", "training_load"],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "vo2max-intervals",
+    title: "VO2max interval sessions",
+    category: "AEROBIC",
+    description: "Periodic high-intensity interval sessions aimed at aerobic ceiling, layered on an existing aerobic base.",
+    targetSystems: ["cardiovascular"],
+    supportedGoalCategories: ["CARDIOVASCULAR", "AEROBIC", "PERFORMANCE"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "HIGH",
+    riskLevel: "MEDIUM",
+    timeCost: "MEDIUM",
+    costLevel: "LOW",
+    measurementOptions: ["vo2max", "resting_hr", "training_load"],
+    contraindicationNotes: ["Higher cardiovascular/orthopedic demand than Zone 2 — build an aerobic base first."],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "strength-training",
+    title: "Structured strength training",
+    category: "STRENGTH",
+    description: "Two or more resistance-training sessions per week targeting major movement patterns.",
+    targetSystems: ["musculoskeletal", "metabolic"],
+    supportedGoalCategories: ["STRENGTH", "LONGEVITY", "PERFORMANCE"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "MEDIUM",
+    riskLevel: "MEDIUM",
+    timeCost: "MEDIUM",
+    costLevel: "LOW",
+    measurementOptions: ["training_load"],
+    contraindicationNotes: ["Reduce load or defer during acute injury or illness."],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "mobility-work",
+    title: "Mobility / movement quality work",
+    category: "RECOVERY",
+    description: "Short, regular mobility sessions targeting areas of recorded stiffness or soreness.",
+    targetSystems: ["musculoskeletal"],
+    supportedGoalCategories: ["STRENGTH", "PERFORMANCE", "LONGEVITY"],
+    evidenceLevel: "EMERGING",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: ["PAIN"],
+  },
+  {
+    id: "sauna-sessions",
+    title: "Sauna sessions",
+    category: "RECOVERY",
+    description: "Regular post-training or evening heat exposure.",
+    targetSystems: ["cardiovascular", "brain"],
+    supportedGoalCategories: ["CARDIOVASCULAR", "LONGEVITY"],
+    evidenceLevel: "EMERGING",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "MEDIUM",
+    costLevel: "MEDIUM",
+    measurementOptions: ["hrv", "sleep_duration"],
+    contraindicationNotes: ["Avoid combining with acute dehydration, illness with fever, or cardiovascular symptoms without medical guidance."],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "cold-exposure",
+    title: "Cold exposure",
+    category: "RECOVERY",
+    description: "Brief cold-water or cold-air exposure, typically post-training or as a standalone practice.",
+    targetSystems: ["cardiovascular"],
+    supportedGoalCategories: ["CARDIOVASCULAR", "MENTAL"],
+    evidenceLevel: "EMERGING",
+    burden: "MEDIUM",
+    riskLevel: "MEDIUM",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: ["hrv"],
+    contraindicationNotes: ["May blunt hypertrophy adaptations if done immediately after strength training.", "Avoid with uncontrolled cardiovascular conditions without medical guidance."],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "breathwork",
+    title: "Breathwork practice",
+    category: "STRESS",
+    description: "A short daily structured breathing practice.",
+    targetSystems: ["brain"],
+    supportedGoalCategories: ["MENTAL", "SLEEP"],
+    evidenceLevel: "EMERGING",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: ["stress_level", "hrv"],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: ["HIGH_STRESS"],
+  },
+  {
+    id: "protein-distribution",
+    title: "Even protein distribution across meals",
+    category: "NUTRITION",
+    description: "Spread protein intake across meals rather than concentrating it in one sitting.",
+    targetSystems: ["musculoskeletal", "metabolic"],
+    supportedGoalCategories: ["STRENGTH", "METABOLIC", "LONGEVITY"],
+    evidenceLevel: "MODERATE",
+    burden: "MEDIUM",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "fiber-intake",
+    title: "Increase dietary fiber",
+    category: "NUTRITION",
+    description: "Increase fiber intake gradually toward common dietary guideline targets.",
+    targetSystems: ["gut", "metabolic"],
+    supportedGoalCategories: ["METABOLIC", "LONGEVITY"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "MEDIUM",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "hydration",
+    title: "Hydration consistency",
+    category: "BEHAVIOR",
+    description: "Maintain steady fluid intake across the day, especially around training.",
+    targetSystems: ["kidneys", "musculoskeletal"],
+    supportedGoalCategories: ["LONGEVITY", "PERFORMANCE"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "LOW",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: false,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "smoking-cessation-support",
+    title: "Smoking cessation support",
+    category: "BEHAVIOR",
+    description: "Structured support (counseling, nicotine replacement, or a clinician-guided program) for quitting smoking.",
+    targetSystems: ["cardiovascular", "lungs"],
+    supportedGoalCategories: ["HABIT", "LONGEVITY", "CARDIOVASCULAR"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "HIGH",
+    riskLevel: "LOW",
+    timeCost: "MEDIUM",
+    costLevel: "MEDIUM",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: true,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "lab-follow-up",
+    title: "Schedule a lab follow-up",
+    category: "MEDICAL_FOLLOWUP",
+    description: "Repeat a lab panel to confirm a trend or check a value that's due for a refresh.",
+    targetSystems: [],
+    supportedGoalCategories: ["LONGEVITY", "CARDIOVASCULAR", "METABOLIC", "IMMUNE"],
+    evidenceLevel: "ESTABLISHED",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "MEDIUM",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: true,
+    active: true,
+    relevantExposureTypes: [],
+  },
+  {
+    id: "medical-discussion",
+    title: "Discuss with your physician",
+    category: "MEDICAL_FOLLOWUP",
+    description: "Bring a recorded pattern, symptom, or medication/supplement question to a clinician rather than resolving it here.",
+    targetSystems: [],
+    supportedGoalCategories: [],
+    evidenceLevel: "UNKNOWN",
+    burden: "LOW",
+    riskLevel: "LOW",
+    timeCost: "LOW",
+    costLevel: "MEDIUM",
+    measurementOptions: [],
+    contraindicationNotes: [],
+    requiresMedicalReview: true,
+    active: true,
+    relevantExposureTypes: [],
+  },
+];
+
+export function getInterventionById(id: string): InterventionDefinition | undefined {
+  return INTERVENTION_CATALOG.find((i) => i.id === id);
+}
+
+export function listActiveInterventions(): InterventionDefinition[] {
+  return INTERVENTION_CATALOG.filter((i) => i.active);
+}

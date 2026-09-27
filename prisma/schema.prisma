@@ -1,0 +1,929 @@
+// Meridian — Personal Health OS
+// Local-first, single-user data model. See docs/DATA_MODEL.md for the
+// rationale behind each entity and every deliberate deviation from a
+// "pure" 1:1 field list (a few fields — e.g. Goal.kind, Goal.progress,
+// LabExtractionItem.resultingMeasurementId — were added because the
+// existing UI genuinely needs them, not to gold-plate the schema).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Profile & medical background
+// ---------------------------------------------------------------------------
+
+enum BiologicalSex {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum ActivityLevel {
+  SEDENTARY
+  LIGHTLY_ACTIVE
+  MODERATELY_ACTIVE
+  VERY_ACTIVE
+  ATHLETE
+}
+
+// This app is single-user: the service layer always reads/creates exactly
+// one UserProfile row rather than enforcing multi-tenancy at the schema level.
+model UserProfile {
+  id                 String         @id @default(cuid())
+  firstName          String
+  lastName           String?
+  dateOfBirth        DateTime
+  biologicalSex      BiologicalSex?
+  heightCm           Float
+  currentWeightKg    Float?
+  timezone           String
+  occupation         String?
+  activityLevel      ActivityLevel?
+  generalHealthNotes String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  medicalHistory MedicalHistory[]
+  medications    Medication[]
+  supplements    Supplement[]
+}
+
+enum MedicalConditionStatus {
+  ACTIVE
+  MANAGED
+  RESOLVED
+  SUSPECTED
+  HISTORICAL
+}
+
+// Distinct from MedicalConditionStatus: this captures *how confidently* the
+// record is known to be true, not the clinical state of the condition.
+enum RecordProvenance {
+  SELF_REPORTED
+  DOCTOR_DIAGNOSED
+  DOCUMENT_IMPORTED
+  AI_EXTRACTED
+  OTHER
+}
+
+model MedicalHistory {
+  id            String                 @id @default(cuid())
+  profileId     String
+  profile       UserProfile            @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  condition     String
+  diagnosisDate DateTime?
+  status        MedicalConditionStatus @default(ACTIVE)
+  notes         String?
+  source        RecordProvenance       @default(SELF_REPORTED)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([profileId])
+}
+
+model Medication {
+  id        String      @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String
+  dose      Float?
+  unit      String?
+  frequency String?
+  startedAt DateTime?
+  stoppedAt DateTime?
+  active    Boolean     @default(true)
+  notes     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([profileId])
+}
+
+model Supplement {
+  id          String      @id @default(cuid())
+  profileId   String
+  profile     UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name        String
+  productName String?
+  dose        Float?
+  unit        String?
+  frequency   String?
+  startedAt   DateTime?
+  stoppedAt   DateTime?
+  active      Boolean     @default(true)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([profileId])
+}
+
+// ---------------------------------------------------------------------------
+// Biomarkers — one unified time series for both lab values and wearable
+// metrics (they differ only by BiomarkerMeasurement.sourceType), which is
+// what makes this schema ready for a future wearable integration without
+// a redesign.
+// ---------------------------------------------------------------------------
+
+enum BodySystem {
+  BRAIN
+  CARDIOVASCULAR
+  LUNGS
+  LIVER
+  GUT
+  KIDNEYS
+  METABOLIC
+  MUSCULOSKELETAL
+  IMMUNE
+}
+
+enum DataSourceType {
+  LAB_REPORT
+  MANUAL
+  WEARABLE
+  IMPORT
+  AI_EXTRACTED
+  CALCULATED
+}
+
+model BiomarkerDefinition {
+  id           String      @id @default(cuid())
+  canonicalKey String      @unique
+  displayName  String
+  shortName    String?
+  category     String
+  defaultUnit  String?
+  description  String?
+  whyItMatters String?
+  bodySystem   BodySystem?
+  // string[] of alternate labels a lab report / user might use, e.g.
+  // ["Apo B", "ApoB", "Apolipoprotein-B"] -> canonicalKey "apob".
+  // Stored as JSON text because SQLite has no native array column type.
+  aliases      Json        @default("[]")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  measurements        BiomarkerMeasurement[]
+  suggestedInExtracts LabExtractionItem[]    @relation("SuggestedDefinition")
+  finalizedInExtracts LabExtractionItem[]    @relation("FinalDefinition")
+
+  @@index([bodySystem])
+}
+
+// Every row is an immutable time-series datapoint. Corrections happen by
+// adding a new (verified) row or by editing a not-yet-verified one that
+// came from an unconfirmed extraction — never by overwriting history.
+model BiomarkerMeasurement {
+  id                    String              @id @default(cuid())
+  biomarkerDefinitionId String
+  biomarkerDefinition   BiomarkerDefinition @relation(fields: [biomarkerDefinitionId], references: [id], onDelete: Restrict)
+  value                 Float
+  unit                  String
+  measuredAt            DateTime
+  referenceMin          Float?
+  referenceMax          Float?
+  referenceText         String?
+  personalTargetMin     Float?
+  personalTargetMax     Float?
+  sourceType            DataSourceType
+  sourceDocumentId      String?
+  sourceDocument        HealthDocument?     @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  // Phase 5: set only for rows written by the wearable import pipeline —
+  // absence of these two fields is exactly what distinguishes Phase 4's
+  // demo-seeded wearable rows from a real import (see docs/WEARABLE_ARCHITECTURE.md,
+  // "Demo vs. real data isolation").
+  dataSourceId          String?
+  dataSource            HealthDataSource?   @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+  // A native record id from the source, or (when none exists) a deterministic
+  // fingerprint hash — see lib/wearables/fingerprint.ts. Re-importing the
+  // same export must never create a duplicate row.
+  externalId            String?
+  notes                 String?
+  verified              Boolean             @default(true)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([dataSourceId, externalId])
+  @@index([biomarkerDefinitionId, measuredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Wearable ingestion
+//
+// External wearable source -> connector/importer (lib/wearables/*) ->
+// canonical records -> BiomarkerMeasurement / SleepSession / WorkoutSession.
+// Analytics (lib/analytics/*) only ever reads canonical measurements — no
+// provider-specific branching there. See docs/WEARABLE_ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+enum HealthDataSourceType {
+  LAB
+  WEARABLE
+  JOURNAL
+  MANUAL
+  IMPORT
+}
+
+enum HealthDataSourceProvider {
+  ZEPP
+  AMAZFIT
+  APPLE_HEALTH
+  HEALTH_CONNECT
+  GENERIC_CSV
+  MANUAL
+  LAB_PROVIDER
+}
+
+enum HealthDataSourceStatus {
+  NOT_CONFIGURED
+  CONNECTED
+  NEEDS_IMPORT
+  ERROR
+}
+
+// A source of health data Meridian can import from — one row per
+// device/provider/connection, not per import. Never stores credentials:
+// every current connector is file-import-based, so none are needed.
+model HealthDataSource {
+  id                     String                   @id @default(cuid())
+  type                   HealthDataSourceType
+  provider               HealthDataSourceProvider
+  displayName            String
+  deviceName             String?
+  status                 HealthDataSourceStatus   @default(NOT_CONFIGURED)
+  lastImportAt           DateTime?
+  lastSuccessfulImportAt DateTime?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  metadata               Json
+
+  importSessions  WearableImportSession[]
+  measurements    BiomarkerMeasurement[]
+  sleepSessions   SleepSession[]
+  workoutSessions WorkoutSession[]
+}
+
+enum WearableImportStatus {
+  PENDING
+  INSPECTED
+  IMPORTING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+// One auditable record per file import attempt — this is the "import
+// history" the UI shows, and the input to re-import idempotency reporting
+// ("1,842 records found / 0 imported / 1,842 already present").
+model WearableImportSession {
+  id               String               @id @default(cuid())
+  dataSourceId     String
+  dataSource       HealthDataSource     @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  status           WearableImportStatus @default(PENDING)
+  originalFileName String?
+  fileHash         String?
+  startedAt        DateTime             @default(now())
+  completedAt      DateTime?
+  recordsFound     Int                  @default(0)
+  recordsImported  Int                  @default(0)
+  recordsSkipped   Int                  @default(0)
+  recordsFailed    Int                  @default(0)
+  metadata         Json
+  errorMessage     String?
+
+  @@index([dataSourceId])
+}
+
+// The richer drill-down object a single BiomarkerMeasurement row can't
+// represent well. Daily summary values (sleep_duration, sleep_score, ...)
+// are ALSO written to BiomarkerMeasurement so the existing analytics engine
+// needs no changes to consume them — this table exists for detail views only.
+model SleepSession {
+  id               String           @id @default(cuid())
+  dataSourceId     String
+  dataSource       HealthDataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  externalId       String?
+  // The calendar date this session is attributed to — see the "sleep day"
+  // convention in docs/WEARABLE_ARCHITECTURE.md (the date the person woke up).
+  sleepDay         DateTime
+  startedAt        DateTime
+  endedAt          DateTime
+  durationMinutes  Int
+  deepMinutes      Int?
+  remMinutes       Int?
+  lightMinutes     Int?
+  awakeMinutes     Int?
+  sleepScore       Int?
+  averageHeartRate Float?
+  averageHrv       Float?
+  averageSpo2      Float?
+  respiratoryRate  Float?
+  sourceMetadata   Json
+  createdAt        DateTime         @default(now())
+
+  @@unique([dataSourceId, externalId])
+  @@index([sleepDay])
+}
+
+// Minimal workout structure — enough for Phase 4 pattern analysis
+// (STRENGTH_TRAINING/ZONE2/HIGH_INTENSITY/JUDO normalization) without
+// building a full training platform.
+model WorkoutSession {
+  id               String           @id @default(cuid())
+  dataSourceId     String
+  dataSource       HealthDataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  externalId       String?
+  type             String
+  startedAt        DateTime
+  endedAt          DateTime
+  durationMinutes  Int
+  averageHeartRate Float?
+  maxHeartRate     Float?
+  trainingLoad     Float?
+  distanceKm       Float?
+  calories         Float?
+  sourceMetadata   Json
+  createdAt        DateTime         @default(now())
+
+  @@unique([dataSourceId, externalId])
+  @@index([startedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Documents & lab extraction pipeline
+// ---------------------------------------------------------------------------
+
+enum DocumentType {
+  LAB_REPORT
+  DOCTOR_LETTER
+  MICROBIOME_REPORT
+  BODY_COMPOSITION
+  OTHER
+}
+
+model HealthDocument {
+  id               String       @id @default(cuid())
+  type             DocumentType
+  originalFileName String
+  mimeType         String
+  // Path relative to HEALTH_UPLOADS_DIR — binary bytes never touch the DB.
+  localFilePath    String
+  fileSizeBytes    Int?
+  documentDate     DateTime?
+  providerName     String?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  extractionSessions LabExtractionSession[]
+  measurements       BiomarkerMeasurement[]
+}
+
+enum ExtractionStatus {
+  PENDING
+  EXTRACTING
+  EXTRACTED
+  CONFIRMED
+  FAILED
+}
+
+// The intermediate stage between "file uploaded" and "verified health data".
+// Nothing in here is trusted until a human confirms it.
+model LabExtractionSession {
+  id            String           @id @default(cuid())
+  documentId    String
+  document      HealthDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status        ExtractionStatus @default(PENDING)
+  // Raw extractor output (JSON-encoded), kept for debugging/re-review.
+  rawExtraction String?
+  extractorName String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  items LabExtractionItem[]
+
+  @@index([documentId])
+}
+
+model LabExtractionItem {
+  id                             String               @id @default(cuid())
+  extractionSessionId            String
+  extractionSession              LabExtractionSession @relation(fields: [extractionSessionId], references: [id], onDelete: Cascade)
+  rawName                        String
+  suggestedBiomarkerDefinitionId String?
+  suggestedBiomarkerDefinition   BiomarkerDefinition? @relation("SuggestedDefinition", fields: [suggestedBiomarkerDefinitionId], references: [id], onDelete: SetNull)
+  value                          Float
+  unit                           String
+  referenceMin                   Float?
+  referenceMax                   Float?
+  // A non-numeric reference range as printed (e.g. "Premenopausal:
+  // 15-350 pg/mL" or "Negative") — kept verbatim, never parsed into
+  // referenceMin/Max, so a textual range is never silently dropped.
+  referenceText                  String?
+  confidence                     Float?
+  accepted                       Boolean              @default(true)
+  editedByUser                   Boolean              @default(false)
+  finalBiomarkerDefinitionId     String?
+  finalBiomarkerDefinition       BiomarkerDefinition? @relation("FinalDefinition", fields: [finalBiomarkerDefinitionId], references: [id], onDelete: SetNull)
+  // Set once this item has produced a BiomarkerMeasurement, so a session
+  // can be confirmed at most once per item (idempotent import).
+  resultingMeasurementId         String?              @unique
+  createdAt                      DateTime             @default(now())
+  // Bundled, variably-shaped per-item provenance from real-document
+  // extraction: { collectionDate?, reportDate?, sourcePage?, sourceSnippet? }
+  // — one JSON column rather than four rarely-all-present ones. Never
+  // required, never invented if the model didn't actually see it.
+  sourceMetadata                 Json?
+
+  @@index([extractionSessionId])
+}
+
+// ---------------------------------------------------------------------------
+// Journal — raw text is sacred; observations are a separate derived layer.
+// ---------------------------------------------------------------------------
+
+enum ObservationType {
+  MOOD
+  ENERGY
+  STRESS
+  SLEEP
+  FOOD
+  ALCOHOL
+  CAFFEINE
+  TRAINING
+  PAIN
+  SYMPTOM
+  MEDICATION
+  SUPPLEMENT
+  LIFESTYLE
+  OTHER
+}
+
+model JournalEntry {
+  id        String   @id @default(cuid())
+  text      String
+  entryDate DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  observations JournalObservation[]
+
+  @@index([entryDate])
+}
+
+model JournalObservation {
+  id              String          @id @default(cuid())
+  journalEntryId  String
+  journalEntry    JournalEntry    @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  type            ObservationType
+  label           String
+  normalizedValue String?
+  confidence      Float?
+  source          DataSourceType  @default(AI_EXTRACTED)
+  createdAt       DateTime        @default(now())
+
+  @@index([journalEntryId])
+}
+
+// ---------------------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------------------
+
+enum GoalCategory {
+  LONGEVITY
+  CARDIOVASCULAR
+  STRENGTH
+  AEROBIC
+  SLEEP
+  METABOLIC
+  IMMUNE
+  MENTAL
+  HABIT
+  PERFORMANCE
+  OTHER
+}
+
+// Not in the original spec's field list, but required to distinguish the
+// one long-term goal from supporting goals and temporary projects — the
+// distinction the product spec itself describes in prose.
+enum GoalKind {
+  LONG_TERM
+  SUPPORTING
+  PROJECT
+}
+
+enum GoalPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum GoalStatus {
+  ON_TRACK
+  ATTENTION
+  PREPARATION
+  COMPLETED
+  ABANDONED
+}
+
+// Phase 6: how long a goal is meant to hold, independent of its `kind` — a
+// SUPPORTING goal can be QUARTER-scale ("improve VO2max this quarter") or
+// effectively LONG_TERM ("cardiovascular health"); a PROJECT is usually
+// TEMPORARY. Optional and additive — existing goals just have `null` here.
+enum GoalTimeHorizon {
+  LONG_TERM
+  QUARTER
+  MONTH
+  TEMPORARY
+}
+
+model Goal {
+  id           String           @id @default(cuid())
+  title        String
+  description  String?
+  category     GoalCategory
+  kind         GoalKind         @default(SUPPORTING)
+  priority     GoalPriority     @default(MEDIUM)
+  status       GoalStatus       @default(ON_TRACK)
+  // 0-100, optional — supporting goals show a progress bar in the UI.
+  progress     Int?
+  startDate    DateTime?
+  targetDate   DateTime?
+  timeHorizon  GoalTimeHorizon?
+  // Why this goal exists — surfaced by the Coach when explaining a priority
+  // ("why this, why now"), not just decorative.
+  rationale    String?
+  successCriteria String?
+  parentGoalId String?
+  parentGoal   Goal?            @relation("GoalHierarchy", fields: [parentGoalId], references: [id], onDelete: SetNull)
+  subGoals     Goal[]           @relation("GoalHierarchy")
+  // BodySystem[] as JSON — lets a goal card link back into the Body view.
+  bodySystems  Json             @default("[]")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([parentGoalId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Coach orchestration: health modes + persisted priorities
+//
+// Neither of these is where "health truth" lives — that stays in Profile,
+// Journal, Labs, Wearables, Goals, Experiments, Insights (Phase 2-5). A
+// HealthMode is a temporary prioritization modifier ("I'm in competition
+// prep, so recovery/performance should outrank hypertrophy for a while");
+// a CoachPriority is a deterministically-generated suggestion the user has
+// explicitly accepted — never created automatically. See
+// docs/COACH_ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+enum HealthModeType {
+  QUIT_SMOKING
+  COMPETITION_PREP
+  TRAVEL
+  ILLNESS_RECOVERY
+  HIGH_WORKLOAD
+  CUSTOM
+}
+
+enum HealthModeStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model HealthMode {
+  id               String           @id @default(cuid())
+  title            String
+  type             HealthModeType
+  status           HealthModeStatus @default(ACTIVE)
+  startedAt        DateTime         @default(now())
+  targetEndAt      DateTime?
+  // Structured, small — e.g. {"boostCategories":["RECOVERY"],"suppressCategories":["STRENGTH"]}.
+  // Read by lib/coach/prioritization.service.ts as the `modeModifier` score component.
+  priorityModifier Json
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+enum CoachPriorityStatus {
+  SUGGESTED
+  ACCEPTED
+  ACTIVE
+  COMPLETED
+  DISMISSED
+}
+
+// A suggestion only becomes durable state once the user accepts it — see
+// "user acceptance" in docs/COACH_ARCHITECTURE.md. Re-running the coach
+// never creates one of these automatically.
+model CoachPriority {
+  id                     String              @id @default(cuid())
+  interventionDefinitionId String
+  title                  String
+  status                 CoachPriorityStatus @default(SUGGESTED)
+  score                  Int
+  rank                   Int
+  reason                 String
+  startedAt              DateTime            @default(now())
+  endedAt                DateTime?
+  linkedGoalIds          Json
+  linkedInsightIds       Json
+  metadata               Json
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Experiments
+// ---------------------------------------------------------------------------
+
+enum ExperimentStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum OutcomeMetricType {
+  BIOMARKER
+  JOURNAL_OBSERVATION
+  SUBJECTIVE_RATING
+  OTHER
+}
+
+model HealthExperiment {
+  id         String           @id @default(cuid())
+  title      String
+  hypothesis String
+  protocol   String
+  startDate  DateTime
+  endDate    DateTime
+  status     ExperimentStatus @default(PLANNED)
+  notes      String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  outcomes ExperimentOutcome[]
+}
+
+model ExperimentOutcome {
+  id              String            @id @default(cuid())
+  experimentId    String
+  experiment      HealthExperiment  @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  metricType      OutcomeMetricType
+  // e.g. a BiomarkerDefinition.canonicalKey, or an ObservationType value.
+  metricReference String?
+  label           String
+  createdAt       DateTime          @default(now())
+
+  @@index([experimentId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Personal Pattern Engine
+//
+// Pipeline: raw data (JournalObservation, BiomarkerMeasurement, ...) ->
+// NormalizedHealthEvent -> deterministic analytics (lib/analytics/*) ->
+// HealthInsight + InsightEvidence. Every stage is plain TypeScript; no LLM
+// ever computes a statistic here — see docs/ANALYTICS_ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+// A small, deliberately bounded taxonomy (section 4 of the Phase 4 spec) —
+// extend it rather than generalizing it away, so normalization stays an
+// explicit, auditable mapping instead of an open-ended classifier.
+enum NormalizedEventType {
+  LATE_MEAL
+  LARGE_MEAL
+  ALCOHOL
+  CAFFEINE_LATE
+  SAUNA
+  COLD_EXPOSURE
+  BREATHWORK
+  STRENGTH_TRAINING
+  ZONE2
+  HIGH_INTENSITY
+  JUDO
+  POOR_SLEEP_SUBJECTIVE
+  LOW_ENERGY
+  HIGH_ENERGY
+  HIGH_STRESS
+  LOW_MOOD
+  PAIN
+  ILLNESS
+  SUPPLEMENT_STARTED
+  SUPPLEMENT_STOPPED
+}
+
+// What kind of record a NormalizedHealthEvent (or InsightEvidence) traces
+// back to. Phase 4 only ever normalizes JournalObservation rows, but the
+// enum leaves room for Supplement/Medication-derived events later without a
+// schema change.
+enum NormalizedEventSourceType {
+  JOURNAL_OBSERVATION
+  SUPPLEMENT
+  MEDICATION
+}
+
+// A single behavioral/subjective occurrence, deterministically derived from
+// an existing record (never guessed, never LLM-classified — see
+// lib/health-events/normalization.service.ts). The unique constraint makes
+// re-running normalization idempotent: the same source row never produces a
+// duplicate event.
+model NormalizedHealthEvent {
+  id         String                    @id @default(cuid())
+  type       NormalizedEventType
+  occurredAt DateTime
+  endedAt    DateTime?
+  sourceType NormalizedEventSourceType
+  sourceId   String
+  confidence Float?
+  metadata   Json
+  createdAt  DateTime                  @default(now())
+
+  @@unique([sourceType, sourceId, type])
+  @@index([type, occurredAt])
+}
+
+enum InsightType {
+  TREND
+  ASSOCIATION
+  RECOVERY
+  BEHAVIOR
+  EXPERIMENT
+  BIOMARKER
+  DATA_QUALITY
+}
+
+enum InsightStatus {
+  ACTIVE
+  WATCHING
+  CONFIRMED_BY_USER
+  DISMISSED
+  STALE
+}
+
+// "Personal confidence," not scientific/clinical confidence — see
+// lib/analytics/confidence.service.ts. Deliberately the same 4-level
+// vocabulary the Phase 1 UI already used for mock insights (early/possible/
+// moderate/strong), now backed by a real deterministic score.
+enum InsightConfidenceLevel {
+  EARLY
+  POSSIBLE
+  MODERATE
+  STRONG
+}
+
+// A persisted, deduplicated analytical finding. `fingerprint` is the
+// dedup key (e.g. "association:LATE_MEAL:sleep_duration:NEXT_NIGHT") — a
+// re-run of the analysis updates the matching row (confidence, evidence,
+// lastObservedAt) instead of creating a new one. `metadata` carries the full
+// structured result (baseline/trend/association/confidence breakdown) that
+// the UI renders — see docs/ANALYTICS_ARCHITECTURE.md for its shape per type.
+model HealthInsight {
+  id              String                 @id @default(cuid())
+  fingerprint     String                 @unique
+  type            InsightType
+  title           String
+  summary         String
+  status          InsightStatus          @default(ACTIVE)
+  confidenceLevel InsightConfidenceLevel
+  confidenceScore Int
+  primarySystem   BodySystem?
+  secondarySystem BodySystem?
+  firstObservedAt DateTime
+  lastObservedAt  DateTime
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  dismissedAt     DateTime?
+  metadata        Json
+
+  evidence InsightEvidence[]
+
+  @@index([status])
+  @@index([primarySystem])
+}
+
+enum InsightEvidenceRole {
+  EXPOSURE
+  OUTCOME
+  BASELINE
+  CONTROL
+  SUPPORTING
+  CONTRADICTING
+  CONFOUNDING
+}
+
+enum InsightEvidenceSourceType {
+  JOURNAL_OBSERVATION
+  NORMALIZED_EVENT
+  BIOMARKER_MEASUREMENT
+}
+
+// One traceable data point behind an insight — this is what answers "why am
+// I seeing this?" in the UI. An insight with only SUPPORTING evidence and no
+// CONTRADICTING rows is a red flag for confirmation bias, not a strong result.
+model InsightEvidence {
+  id           String                    @id @default(cuid())
+  insightId    String
+  insight      HealthInsight             @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  sourceType   InsightEvidenceSourceType
+  sourceId     String
+  role         InsightEvidenceRole
+  observedAt   DateTime?
+  numericValue Float?
+  metadata     Json
+  createdAt    DateTime                  @default(now())
+
+  @@index([insightId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Health knowledge layer
+//
+// Strictly separate from the analytics/insights layer above: a
+// HealthKnowledgeDocument/Chunk is GENERAL health information (curated notes,
+// imported Markdown, guidelines) — never personal evidence about this user.
+// Search is deterministic lexical matching (lib/knowledge/search.service.ts)
+// — no embeddings, no vector DB. See docs/KNOWLEDGE_ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+enum KnowledgeSourceType {
+  CURATED
+  USER_NOTES
+  NOTEBOOKLM_EXPORT
+  GUIDELINE
+  RESEARCH_SUMMARY
+  OTHER
+}
+
+// One imported/curated document. `contentHash` (sha256 of the raw file
+// content) is the idempotency key — re-importing the same file updates
+// nothing and creates no duplicate chunks (see lib/knowledge/knowledge.service.ts).
+model HealthKnowledgeDocument {
+  id          String              @id @default(cuid())
+  title       String
+  sourceType  KnowledgeSourceType
+  sourceName  String?
+  topic       String?
+  bodySystem  BodySystem?
+  contentHash String              @unique
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  metadata    Json
+
+  chunks HealthKnowledgeChunk[]
+
+  @@index([bodySystem])
+  @@index([topic])
+}
+
+// One heading-delimited section of a document. Deliberately coarse — "prefer
+// meaningful headings over arbitrary token slices" (Phase 7 spec) — so a
+// short document can be a single chunk.
+model HealthKnowledgeChunk {
+  id         String                  @id @default(cuid())
+  documentId String
+  document   HealthKnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  heading    String
+  content    String
+  order      Int
+  // string[] of lowercase keywords extracted from the heading/content for
+  // lexical search — stored as JSON text (see BiomarkerDefinition.aliases).
+  keywords   Json                    @default("[]")
+  bodySystem BodySystem?
+  topic      String?
+  createdAt  DateTime                @default(now())
+
+  @@index([documentId])
+  @@index([bodySystem])
+  @@index([topic])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — App-wide settings singleton
+//
+// A single row (id "singleton"). Not per-user data — this is local app
+// configuration (demo-mode transparency, the external-AI kill switch), kept
+// out of UserProfile so toggling it never touches personal data.
+// ---------------------------------------------------------------------------
+
+model AppSettings {
+  id                String   @id @default("singleton")
+  demoMode          Boolean  @default(true)
+  externalAiEnabled Boolean  @default(true)
+  // ISO 639-1 code — "en" | "de" | "ru" (validated in application code, not
+  // by the DB). A UI preference only: it never changes what's stored in the
+  // database, only what language it's displayed/spoken in — see
+  // docs/DATA_MODEL.md, "Internationalization."
+  locale            String   @default("en")
+  updatedAt         DateTime @updatedAt
+}
